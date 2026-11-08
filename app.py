@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
-import sqlite3, csv, io, os
+import sqlite3, csv, io, os, secrets
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -7,11 +7,14 @@ from search_engine import discover
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("DB_PATH") or ("/tmp/leads.db" if os.environ.get("VERCEL") else os.path.join(BASE, "leads.db"))
+os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(48)
 
 def connect():
-    c = sqlite3.connect(DB_PATH)
+    c = sqlite3.connect(DB_PATH, timeout=20)
+    c.execute("PRAGMA busy_timeout=20000")
     c.row_factory = sqlite3.Row
     return c
 
@@ -84,11 +87,12 @@ def search():
             c.execute("INSERT INTO search_runs(query,country,city,found,scanned,status,details,created_at) VALUES(?,?,?,?,?,?,?,?)",
                       (query,country,city,inserted+updated,scanned,"success",f"جديد: {inserted}، محدث: {updated}",now))
         flash(f"انتهى البحث: {inserted} شركة جديدة و{updated} سجل محدث. تمت مراجعة {scanned} نتيجة بحث.", "success")
-    except Exception as e:
+    except Exception:
         with connect() as c:
             c.execute("INSERT INTO search_runs(query,country,city,found,scanned,status,details,created_at) VALUES(?,?,?,?,?,?,?,?)",
-                      (query,country,city,0,0,"error",str(e)[:500],now))
-        flash(f"تعذر تنفيذ البحث: {e}", "error")
+                      (query,country,city,0,0,"error","راجع إعدادات مزود البحث وسجلات الخادم.",now))
+        app.logger.exception("Lead discovery failed")
+        flash("تعذر تنفيذ البحث. راجع إعدادات مزود البحث ثم حاول مرة أخرى.", "error")
     return redirect(url_for("index"))
 
 @app.post("/add")
@@ -113,7 +117,11 @@ def import_csv():
     if not f or not f.filename.lower().endswith(".csv"):
         flash("ارفع ملف CSV فقط","error"); return redirect(url_for("index"))
     try:
-        rows=csv.DictReader(io.StringIO(f.stream.read().decode("utf-8-sig"))); count=0
+        raw = f.stream.read(5 * 1024 * 1024 + 1)
+        if len(raw) > 5 * 1024 * 1024:
+            flash("حجم الملف يتجاوز الحد المسموح (5MB).", "error")
+            return redirect(url_for("index"))
+        rows=csv.DictReader(io.StringIO(raw.decode("utf-8-sig"))); count=0
         with connect() as c:
             for r in rows:
                 company=(r.get("company") or r.get("الشركة") or r.get("name") or "").strip()
@@ -133,12 +141,29 @@ def export():
         rows=c.execute("SELECT company,phone,email,website,country,city,category,source,source_url,notes FROM leads ORDER BY id DESC").fetchall()
     out=io.StringIO(); w=csv.writer(out)
     w.writerow(["company","phone","email","website","country","city","category","source","source_url","notes"])
-    w.writerows([tuple(r) for r in rows])
+    def safe_cell(value):
+        value = "" if value is None else str(value)
+        if value.lstrip(" \\t\\r\\n").startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
+    w.writerows([[safe_cell(v) for v in tuple(r)] for r in rows])
     data=io.BytesIO(("\ufeff"+out.getvalue()).encode("utf-8")); data.seek(0)
     return send_file(data,mimetype="text/csv",as_attachment=True,download_name="leads_generation.csv")
 
+@app.errorhandler(413)
+def file_too_large(_error):
+    flash("حجم الملف يتجاوز الحد المسموح (5MB).", "error")
+    return redirect(url_for("index")), 413
+
 @app.get("/health")
-def health(): return {"status":"ok","app":"leads_generation"}
+def health():
+    try:
+        with connect() as c:
+            c.execute("SELECT 1")
+        return {"status":"ok","app":"leads_generation","database":"reachable"}
+    except Exception:
+        app.logger.exception("Health check database failure")
+        return {"status":"degraded","app":"leads_generation","database":"unavailable"}, 503
 
 init_db()
 if __name__=="__main__":
