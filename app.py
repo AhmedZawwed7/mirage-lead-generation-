@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
-import sqlite3, csv, io, os, secrets
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
+import sqlite3, csv, io, os, secrets, hmac
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -11,6 +11,42 @@ os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
 app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_urlsafe(48)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=bool(os.environ.get("VERCEL")), PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(hours=12))
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "Admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+@app.before_request
+def require_admin_login():
+    allowed = {"login", "static", "health"}
+    if request.endpoint in allowed or request.endpoint is None:
+        return None
+    if not session.get("admin_logged_in"):
+        return redirect(url_for("login", next=request.path))
+    return None
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("admin_logged_in"):
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if not ADMIN_PASSWORD:
+            flash("تسجيل الدخول غير مُفعّل بعد. أضف ADMIN_PASSWORD في إعدادات الاستضافة.", "error")
+        elif hmac.compare_digest(username.encode("utf-8"), ADMIN_USERNAME.encode("utf-8")) and hmac.compare_digest(password.encode("utf-8"), ADMIN_PASSWORD.encode("utf-8")):
+            session.clear()
+            session.permanent = True
+            session["admin_logged_in"] = True
+            flash("أهلاً بك في Mirage.", "success")
+            return redirect(url_for("index"))
+        else:
+            flash("اسم المستخدم أو كلمة المرور غير صحيحة.", "error")
+    return render_template("login.html")
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 def connect():
     c = sqlite3.connect(DB_PATH, timeout=20)
