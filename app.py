@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import sqlite3, csv, io, os
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 from search_engine import discover
 
 BASE = os.path.dirname(os.path.abspath(__file__))
