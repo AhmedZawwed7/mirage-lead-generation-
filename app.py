@@ -142,6 +142,21 @@ def add():
         VALUES(?,?,?,?,?,?,?,?,'manual',?)""",(*data,datetime.utcnow().isoformat(timespec="seconds")))
     flash("تمت إضافة الشركة بنجاح","success"); return redirect(url_for("index"))
 
+@app.post("/status/<int:lead_id>")
+def update_status(lead_id):
+    status = request.form.get("status", "")
+    allowed = {"new", "contacted", "interested", "customer", "not_fit"}
+    if status not in allowed:
+        flash("حالة متابعة غير صحيحة.", "error")
+    else:
+        with connect() as c:
+            cur = c.execute("UPDATE leads SET status=? WHERE id=?", (status, lead_id))
+            if cur.rowcount:
+                flash("تم تحديث حالة العميل.", "success")
+            else:
+                flash("لم يتم العثور على السجل.", "error")
+    return redirect(url_for("index", q=request.args.get("q", ""), country=request.args.get("country", ""), category=request.args.get("category", "")))
+
 @app.post("/delete/<int:lead_id>")
 def delete(lead_id):
     with connect() as c: c.execute("DELETE FROM leads WHERE id=?",(lead_id,))
