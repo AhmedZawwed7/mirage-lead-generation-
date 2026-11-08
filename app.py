@@ -6,7 +6,7 @@ load_dotenv()
 from search_engine import discover
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE, "leads.db")
+DB_PATH = os.environ.get("DB_PATH") or ("/tmp/leads.db" if os.environ.get("VERCEL") else os.path.join(BASE, "leads.db"))
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 
