@@ -135,8 +135,10 @@ def crawl_business(url, country, title="", snippet=""):
     domain = urlparse(url).netloc.lower().removeprefix("www.")
     pages = [url]
     visited, phones, emails, names = set(), set(), set(), []
-    for candidate in list(pages):
-        if len(visited) >= 3: break
+    page_index = 0
+    while page_index < len(pages) and len(visited) < 3:
+        candidate = pages[page_index]
+        page_index += 1
         if candidate in visited: continue
         visited.add(candidate)
         if not _robots_allows(candidate): continue
