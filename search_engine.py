@@ -62,7 +62,7 @@ def search_web(query, country):
     if not key:
         raise RuntimeError("أضف SERPAPI_KEY في إعدادات البيئة لتفعيل البحث الآلي.")
     params = {"engine": "google", "q": query, "api_key": key, "hl": "ar",
-              "gl": "sa" if country == "السعودية" else "ae", "google_domain": "google.com"}
+              "gl": "sa" if country == "السعودية" else "ae", "google_domain": "google.com", "num": 20}
     response = requests.get("https://serpapi.com/search.json", params=params, timeout=TIMEOUT)
     data = response.json()
     if response.status_code >= 400 or data.get("error"):
