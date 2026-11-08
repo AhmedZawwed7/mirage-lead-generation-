@@ -143,7 +143,7 @@ def export():
     w.writerow(["company","phone","email","website","country","city","category","source","source_url","notes"])
     def safe_cell(value):
         value = "" if value is None else str(value)
-        if value.lstrip(" \\t\\r\\n").startswith(("=", "+", "-", "@")):
+        if value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
             return "'" + value
         return value
     w.writerows([[safe_cell(v) for v in tuple(r)] for r in rows])
