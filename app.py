@@ -63,7 +63,7 @@ def init_db():
             source TEXT DEFAULT 'manual', created_at TEXT NOT NULL)""")
         existing = {r[1] for r in c.execute("PRAGMA table_info(leads)")}
         for name, kind in [("email","TEXT DEFAULT ''"),("source_url","TEXT DEFAULT ''"),
-                           ("search_query","TEXT DEFAULT ''"),("last_seen_at","TEXT DEFAULT ''")]:
+                           ("search_query","TEXT DEFAULT ''"),("last_seen_at","TEXT DEFAULT ''"),("status","TEXT DEFAULT 'new'")]:
             if name not in existing: c.execute(f"ALTER TABLE leads ADD COLUMN {name} {kind}")
         c.execute("""CREATE TABLE IF NOT EXISTS search_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT, country TEXT, city TEXT,
