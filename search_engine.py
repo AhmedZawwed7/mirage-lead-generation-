@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 
 UA = "LeadsGenerationBot/1.0 (+business-contact-discovery; respect robots.txt)"
 TIMEOUT = 12
+MAX_PAGE_BYTES = 2097152
 PHONE_RE = re.compile(r"(?<!\w)(?:\+\s?\d{1,3}[\s().-]*)?(?:\(?\d{2,4}\)?[\s().-]*)?\d[\d\s().-]{5,}\d(?!\w)")
 EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 
@@ -32,13 +33,23 @@ def safe_fetch(url):
             return None
         try:
             r = requests.get(current, headers={"User-Agent": UA, "Accept-Language": "ar,en;q=0.8"},
-                             timeout=TIMEOUT, allow_redirects=False)
+                             timeout=TIMEOUT, allow_redirects=False, stream=True)
             if r.is_redirect or r.is_permanent_redirect:
                 target = urljoin(current, r.headers.get("Location", ""))
                 current = target
                 continue
             if r.status_code >= 400:
                 return None
+            declared = r.headers.get("Content-Length")
+            if declared and int(declared) > MAX_PAGE_BYTES:
+                return None
+            chunks, total = [], 0
+            for chunk in r.iter_content(65536):
+                total += len(chunk)
+                if total > MAX_PAGE_BYTES:
+                    return None
+                chunks.append(chunk)
+            r._content = b"".join(chunks)
             return r
         except requests.RequestException:
             return None
@@ -75,7 +86,7 @@ def _robots_allows(url):
     robots_url = f"{p.scheme}://{p.netloc}/robots.txt"
     response = safe_fetch(robots_url)
     if response is None:
-        return True
+        return False
     parser = RobotFileParser()
     parser.set_url(robots_url)
     parser.parse(response.text.splitlines())
